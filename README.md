@@ -2,6 +2,10 @@
 
 This application provides a chat interface that allows users to ask questions about Paul Graham's essay "What I Worked On". The system uses Retrieval-Augmented Generation (RAG) to provide accurate answers based on the content of the essay.
 
+## Live version (Gradio)
+
+https://25ba1202ed0b333833.gradio.live
+
 ## Features
 
 - 💬 Interactive chat interface using Gradio
@@ -12,7 +16,7 @@ This application provides a chat interface that allows users to ask questions ab
 
 ## Demo
 
-![RAG Chat Demo](https://github.com/igor-anosov/llamaindex-essay/raw/main/assets/demo.gif)
+![RAG Chat Demo](https://github.com/igor-anosov/llamaindex-essay-rag/raw/main/assets/demo.gif)
 
 ## Setup
 
@@ -28,8 +32,8 @@ This application provides a chat interface that allows users to ask questions ab
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/igor-anosov/llamaindex-essay.git
-   cd llamaindex-essay
+   git clone https://github.com/igor-anosov/llamaindex-essay-rag.git
+   cd llamaindex-essay-rag
    ```
 
 2. Create and activate a virtual environment:

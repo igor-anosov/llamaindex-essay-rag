@@ -38,7 +38,8 @@ index_dir = "./storage"
 
 # Load documents and create index (or load from disk if already exists)
 def get_index():
-    if os.path.exists(index_dir):
+    # Check if the storage directory exists and contains required index files
+    if os.path.exists(index_dir) and os.path.exists(os.path.join(index_dir, "docstore.json")):
         # Load existing index
         print("Loading existing index...")
         storage_context = StorageContext.from_defaults(persist_dir=index_dir)

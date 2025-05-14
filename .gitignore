@@ -4,3 +4,4 @@ venv/
 .DS_Store
 storage/
 .gradio/
+chroma_db/

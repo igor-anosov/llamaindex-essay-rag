@@ -117,47 +117,34 @@ def process_cv(cv_file):
         return f"Error processing CV: {str(e)}", []
 
 def search_cvs(job_description, top_k=3):
-    """Search for relevant CVs based on a job description or search query using ChromaDB vector store."""
+    """Search for relevant CVs based on job description"""
     try:
-        # List all CV files to check if any exist
-        cv_files = [f for f in os.listdir(cv_dir) if os.path.isfile(os.path.join(cv_dir, f))]
-        
-        if not cv_files:
-            return "No CVs found in the system. Please upload CVs first."
+        if not job_description:
+            return "Error: Please enter job description"
             
-        # Create index with explicit empty filter
-        index = VectorStoreIndex.from_vector_store(
-            vector_store=vector_store,
-            vector_store_kwargs={"where": None}  # Explicitly disable filters
+        # Get embedding for job description
+        job_embedding = embed_model.get_text_embedding(job_description)
+        
+        # Query ChromaDB with exact top_k value
+        results = chroma_collection.query(
+            query_embeddings=[job_embedding],
+            n_results=top_k,
+            include=["documents", "metadatas"]
         )
         
-        # Create query engine with safe defaults
-        query_engine = index.as_query_engine(
-            similarity_top_k=top_k*3,
-            response_mode="tree_summarize",
-            vector_store_kwargs={"where": None}  # Ensure no empty filters
-        )
-        
-        query = f"""
-        Based on the following job description, find relevant candidates and explain why they match:
-        
-        {job_description}
-         
-        For each matching candidate, provide:
-        1. Name (if available)
-        2. Key skills that match the job requirements
-        3. Relevant experience
-        4. Educational background if relevant
-        5. A brief explanation of why they are a good match
-        """
-        
-        response = query_engine.query(query)
-        return str(response)
-    
+        if not results['ids']:
+            return "No matching CVs found"
+            
+        # Process and return top_k results
+        output = []
+        for i in range(len(results['ids'][0])):
+            cv_id = results['ids'][0][i]
+            cv_content = results['documents'][0][i]
+            output.append(f"## {i+1}. CV {cv_id}:\n{cv_content[:500]}...")
+            
+        return "\n\n---\n\n".join(output)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return f"Error searching CVs: {str(e)}"
+        return f"Search error: {str(e)}"
 
 def analyze_cv(cv_name, analysis_type):
     """Analyze a specific CV for different purposes using the ChromaDB vector store."""
@@ -372,6 +359,35 @@ def calculate_match_score(job_desc: str, cv_name: str) -> Dict:
     except Exception as e:
         return {"error": f"Analysis error: {str(e)}"}
 
+def sync_cv_store():
+    """Sync CV files between directory and ChromaDB"""
+    try:
+        # Get existing CVs in ChromaDB (with full metadata)
+        db_items = chroma_collection.get(include=["metadatas"])
+        db_cvs = {m["filename"]: id_ for id_, m in zip(db_items["ids"], db_items["metadatas"]) if m}
+        
+        # Get files from data/cvs directory
+        os.makedirs('data/cvs', exist_ok=True)
+        dir_cvs = {f for f in os.listdir('data/cvs') 
+                  if f.endswith(('.pdf', '.docx', '.txt'))}
+        
+        # Add missing files to ChromaDB
+        for cv_file in dir_cvs - db_cvs.keys():
+            file_path = os.path.join('data/cvs', cv_file)
+            process_cv(file_path)
+            print(f"Added CV: {cv_file}")
+            
+        # Remove deleted files from ChromaDB
+        for cv_file, cv_id in db_cvs.items():
+            if cv_file not in dir_cvs:
+                chroma_collection.delete(ids=[cv_id])
+                print(f"Removed CV: {cv_file}")
+                
+        print(f"Sync complete. Total CVs: {chroma_collection.count()}")
+    except Exception as e:
+        print(f"Sync error: {str(e)}")
+        raise
+
 # Create a Gradio interface
 with gr.Blocks(title="CV Parser and Analyzer") as demo:
     gr.Markdown("# CV Parser and Job Matching System")
@@ -396,15 +412,25 @@ with gr.Blocks(title="CV Parser and Analyzer") as demo:
                 outputs=[cv_state]
             )
         
-        with gr.TabItem("Search CVs", id="search"):
-            job_description = gr.Textbox(label="Job Description", lines=5)
-            top_k = gr.Slider(1, 10, value=3, step=1, label="Number of CVs to Return")
+        with gr.TabItem("CV Search", id="cv_search") as search_tab:
+            search_job_desc = gr.Textbox(
+                label="Job Description", 
+                lines=5,
+                placeholder="Enter job requirements..."
+            )
+            top_k_slider = gr.Slider(
+                minimum=1, 
+                maximum=10, 
+                value=3,
+                step=1,
+                label="Number of CVs to Return"
+            )
             search_button = gr.Button("Search CVs")
-            search_output = gr.Textbox(label="Search Results", lines=15)
+            search_output = gr.Textbox(label="Search Results", lines=15, interactive=False)
             
             search_button.click(
                 fn=search_cvs,
-                inputs=[job_description, top_k],
+                inputs=[search_job_desc, top_k_slider],
                 outputs=[search_output]
             )
         
@@ -566,10 +592,15 @@ with gr.Blocks(title="CV Parser and Analyzer") as demo:
             )
 
 if __name__ == "__main__":
-    initialize_cv_store()  # Process any existing CVs
+    # Process any existing CVs
+    initialize_cv_store()
+    
+    # Sync CV files with database
+    sync_cv_store()
+    
     # Set SSL environment variables to avoid certificate issues
     os.environ['SSL_CERT_VERIFY'] = 'false'
     
     print("Starting the CV Parser interface...")
     # Launch with ssl_verify=False to avoid SSL certificate verification issues
-    demo.launch(share=True, inbrowser=True, ssl_verify=False)
+    demo.launch(inbrowser=True, share=True, ssl_verify=False)
